@@ -1,21 +1,15 @@
-//
-//  ContentView.swift
-//  moodmelodyv2
-//
-//  Created by Edward Chen on 6/22/25.
-//
-
 import SwiftUI
+import MusicKit
 
 struct ContentView: View {
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        if hasCompletedOnboarding {
+            MoodSelectorView()
+        } else {
+            OnboardingView()
         }
-        .padding()
     }
 }
 

@@ -1,17 +1,16 @@
-//
-//  moodmelodyv2App.swift
-//  moodmelodyv2
-//
-//  Created by Edward Chen on 6/22/25.
-//
-
 import SwiftUI
 
 @main
 struct moodmelodyv2App: App {
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if hasCompletedOnboarding {
+                MoodSelectorView()
+            } else {
+                OnboardingView()
+            }
         }
     }
 }
