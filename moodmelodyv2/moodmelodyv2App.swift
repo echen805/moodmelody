@@ -6,11 +6,15 @@ struct moodmelodyv2App: App {
     
     var body: some Scene {
         WindowGroup {
-            if hasCompletedOnboarding {
-                MoodSelectorView()
-            } else {
-                OnboardingView()
-            }
+            // Temporarily bypass onboarding for testing
+            MoodInputView()
+            
+            // Original logic:
+            // if hasCompletedOnboarding {
+            //     MoodInputView()
+            // } else {
+            //     OnboardingView()
+            // }
         }
     }
 }

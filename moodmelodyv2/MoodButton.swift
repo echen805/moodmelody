@@ -18,25 +18,12 @@ struct MoodButton: View {
             .frame(height: 120)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(colorForMood(mood))
+                    .fill(mood.color)
                     .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
             )
             .foregroundColor(.white)
         }
         .buttonStyle(ScaleButtonStyle())
-    }
-    
-    private func colorForMood(_ mood: MoodType) -> Color {
-        switch mood {
-        case .happy:
-            return .yellow
-        case .sad:
-            return .blue
-        case .angry:
-            return .red
-        case .frustrated:
-            return .orange
-        }
     }
 }
 
