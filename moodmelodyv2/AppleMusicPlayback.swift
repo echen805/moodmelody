@@ -8,6 +8,7 @@ class AppleMusicPlayback: ObservableObject {
     
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
+    private var mockPlaybackTimer: Timer?
     
     static let shared = AppleMusicPlayback()
     
@@ -25,6 +26,34 @@ class AppleMusicPlayback: ObservableObject {
     }
     
     func playPreview(track: Track) {
+        if SimulatorDetector.isSimulator {
+            // Mock playback for simulator
+            playMockPreview(track: track)
+        } else {
+            // Real playback for device
+            playRealPreview(track: track)
+        }
+    }
+    
+    private func playMockPreview(track: Track) {
+        // Stop current playback
+        stop()
+        
+        // Start mock playback
+        currentTrack = track
+        isPlaying = true
+        
+        print("Mock playing: \(track.title) by \(track.artist)")
+        
+        // Simulate 30-second preview
+        mockPlaybackTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { _ in
+            Task { @MainActor in
+                self.stop()
+            }
+        }
+    }
+    
+    private func playRealPreview(track: Track) {
         guard let previewURL = track.previewURL else {
             print("No preview URL available for track: \(track.title)")
             return
@@ -54,9 +83,15 @@ class AppleMusicPlayback: ObservableObject {
     }
     
     func stop() {
+        // Stop real playback
         player?.pause()
         player = nil
         playerItem = nil
+        
+        // Stop mock playback
+        mockPlaybackTimer?.invalidate()
+        mockPlaybackTimer = nil
+        
         currentTrack = nil
         isPlaying = false
         
