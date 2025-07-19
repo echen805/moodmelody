@@ -3,6 +3,7 @@ import SwiftUI
 struct MoodSelectorView: View {
     @State private var selectedMood: MoodType?
     @State private var showTrackList = false
+    @State private var sessionId = UUID().uuidString
     
     var body: some View {
         NavigationView {
@@ -28,6 +29,7 @@ struct MoodSelectorView: View {
                     ForEach(MoodType.allCases) { mood in
                         MoodButton(mood: mood) {
                             selectedMood = mood
+                            sessionId = UUID().uuidString
                             showTrackList = true
                         }
                     }
@@ -40,7 +42,11 @@ struct MoodSelectorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showTrackList) {
                 if let mood = selectedMood {
-                    TrackListView(mood: mood)
+                    TrackListView(
+                        mood: mood,
+                        originalInput: "Selected \(mood.rawValue) mood directly",
+                        sessionId: sessionId
+                    )
                 }
             }
         }

@@ -5,7 +5,11 @@ struct MoodInputView: View {
     @State private var inferredMood: MoodType?
     @State private var showingTrackList = false
     @State private var isAnalyzing = false
+    @State private var showingMoodSelector = false
+    @State private var sessionId = UUID().uuidString
     @FocusState private var isTextFieldFocused: Bool
+    
+    @StateObject private var feedbackManager = FeedbackManager.shared
     
     var body: some View {
         NavigationView {
@@ -70,11 +74,32 @@ struct MoodInputView: View {
                         .background(mood.color.opacity(0.1))
                         .cornerRadius(12)
                         
-                        Button("Find My Music") {
-                            showingTrackList = true
+                        // Action Buttons
+                        HStack(spacing: 12) {
+                            Button("Find My Music") {
+                                // Record that user accepted the mood
+                                feedbackManager.recordMoodAccepted(
+                                    originalInput: feelingText,
+                                    detectedMood: mood,
+                                    sessionId: sessionId
+                                )
+                                showingTrackList = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
+                            
+                            Button("Not quite right?") {
+                                showingMoodSelector = true
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.regular)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
+                        
+                        Button("Search Again") {
+                            searchAgain()
+                        }
+                        .font(.footnote)
+                        .foregroundColor(.blue)
                     }
                     .padding(.horizontal)
                     .transition(.slide)
@@ -100,6 +125,13 @@ struct MoodInputView: View {
                 }
                 
                 Spacer()
+                
+                // Feedback count (for debugging/info)
+                if feedbackManager.feedbackCount > 0 {
+                    Text("\(feedbackManager.feedbackCount) feedback entries stored")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
             .navigationTitle("MoodMelody")
             .navigationBarTitleDisplayMode(.inline)
@@ -108,7 +140,38 @@ struct MoodInputView: View {
             }
             .sheet(isPresented: $showingTrackList) {
                 if let mood = inferredMood {
-                    TrackListView(mood: mood)
+                    TrackListView(
+                        mood: mood,
+                        originalInput: feelingText,
+                        sessionId: sessionId
+                    )
+                }
+            }
+            .sheet(isPresented: $showingMoodSelector) {
+                if let currentMood = inferredMood {
+                    MoodSelectorSheet(
+                        isPresented: $showingMoodSelector,
+                        onMoodSelected: { correctedMood in
+                            // Record the mood correction
+                            feedbackManager.recordMoodCorrection(
+                                originalInput: feelingText,
+                                detectedMood: currentMood,
+                                correctedMood: correctedMood,
+                                sessionId: sessionId
+                            )
+                            
+                            // Update the mood and show tracks
+                            withAnimation {
+                                inferredMood = correctedMood
+                            }
+                            
+                            // Automatically show track list after correction
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                showingTrackList = true
+                            }
+                        },
+                        currentMood: currentMood
+                    )
                 }
             }
         }
@@ -120,12 +183,38 @@ struct MoodInputView: View {
         isAnalyzing = true
         isTextFieldFocused = false
         
+        // Generate new session ID for this analysis
+        sessionId = UUID().uuidString
+        
         // Simulate analysis delay for better UX
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             withAnimation(.easeInOut(duration: 0.3)) {
                 inferredMood = MoodType.inferMood(from: feelingText)
                 isAnalyzing = false
             }
+        }
+    }
+    
+    private func searchAgain() {
+        guard let mood = inferredMood else { return }
+        
+        // Record search again feedback
+        feedbackManager.recordSearchAgain(
+            originalInput: feelingText,
+            detectedMood: mood,
+            sessionId: sessionId
+        )
+        
+        // Reset state and start over
+        withAnimation {
+            inferredMood = nil
+            feelingText = ""
+            sessionId = UUID().uuidString
+        }
+        
+        // Focus back on text field
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isTextFieldFocused = true
         }
     }
 }
