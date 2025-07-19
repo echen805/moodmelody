@@ -27,73 +27,72 @@ class AppleMusicSearch: ObservableObject {
         print("🎵 [MusicSearch] Bundle ID: \(Bundle.main.bundleIdentifier ?? "Unknown")")
         
         do {
-            let tracks: [Track]
+            // Check authorization first
+            let authStatus = MusicAuthorization.currentStatus
+            print("🔐 [MusicSearch] Current authorization status: \(authStatus)")
             
-            if SimulatorDetector.isSimulator {
-                // Only use mock data in simulator
-                print("📱 [MusicSearch] Running in simulator - using mock data")
-                tracks = generateMockTracks(for: mood, limit: limit)
-                try await Task.sleep(nanoseconds: 1_000_000_000) // Simulate network delay
-            } else {
-                // Real device: attempt real API access
-                print("📱 [MusicSearch] Running on device - attempting real Apple Music API")
+            if authStatus != .authorized {
+                print("🔐 [MusicSearch] Authorization required, requesting...")
+                let requestedStatus = await MusicAuthorization.request()
+                print("🔐 [MusicSearch] Authorization result: \(requestedStatus)")
                 
-                // Check authorization first
-                let authStatus = MusicAuthorization.currentStatus
-                print("🔐 [MusicSearch] Current authorization status: \(authStatus)")
-                
-                if authStatus != .authorized {
-                    print("🔐 [MusicSearch] Authorization required, requesting...")
-                    let requestedStatus = await MusicAuthorization.request()
-                    print("🔐 [MusicSearch] Authorization result: \(requestedStatus)")
-                    
-                    if requestedStatus != .authorized {
-                        let error = MusicError.authorizationNotGranted
-                        errorMessage = "Apple Music access is required to search for tracks."
-                        print("❌ [MusicSearch] Authorization denied by user")
-                        isLoading = false
-                        return []
-                    }
-                }
-                
-                print("✅ [MusicSearch] Authorization granted, making API request...")
-                
-                // Make the real API call
-                var searchRequest = MusicCatalogSearchRequest(
-                    term: mood.searchTerm,
-                    types: [Song.self]
-                )
-                searchRequest.limit = limit
-                
-                print("🌐 [MusicSearch] API Request configured: \(mood.searchTerm)")
-                
-                let response = try await searchRequest.response()
-                let songs = response.songs
-                
-                print("✅ [MusicSearch] API Response received: \(songs.count) songs")
-                
-                tracks = songs.map { song in
-                    Track(
-                        id: song.id.rawValue,
-                        title: song.title,
-                        artist: song.artistName,
-                        artworkURL: song.artwork?.url(width: 300, height: 300),
-                        previewURL: song.previewAssets?.first?.url,
-                        catalogID: song.id.rawValue
-                    )
-                }
-                
-                print("🎵 [MusicSearch] Successfully converted \(tracks.count) songs to Track objects")
-                
-                // Log first few track names for debugging
-                for (index, track) in tracks.prefix(3).enumerated() {
-                    print("🎵 [MusicSearch] Track \(index + 1): '\(track.title)' by \(track.artist)")
+                if requestedStatus != .authorized {
+                    let error = MusicError.authorizationNotGranted
+                    errorMessage = "Apple Music access is required to search for tracks."
+                    print("❌ [MusicSearch] Authorization denied by user")
+                    isLoading = false
+                    return []
                 }
             }
             
+            print("✅ [MusicSearch] Authorization granted, making API request...")
+            
+            // Create search request
+            var searchRequest = MusicCatalogSearchRequest(
+                term: mood.searchTerm,
+                types: [Song.self]
+            )
+            searchRequest.limit = limit
+            
+            print("🌐 [MusicSearch] API Request configured: \(mood.searchTerm)")
+            
+            let response = try await searchRequest.response()
+            let songs = response.songs
+            
+            print("✅ [MusicSearch] API Response received: \(songs.count) songs")
+            
+            let tracks = songs.compactMap { song -> Track? in
+                // Only include songs that have preview assets
+                guard let previewURL = song.previewAssets?.first?.url else {
+                    print("⚠️ [MusicSearch] Skipping song without preview: \(song.title)")
+                    return nil
+                }
+                
+                return Track(
+                    id: song.id.rawValue,
+                    title: song.title,
+                    artist: song.artistName,
+                    artworkURL: song.artwork?.url(width: 300, height: 300),
+                    previewURL: previewURL,
+                    catalogID: song.id.rawValue
+                )
+            }
+            
+            print("🎵 [MusicSearch] Successfully converted \(tracks.count) songs to Track objects")
+            
+            // Log first few track names for debugging
+            for (index, track) in tracks.prefix(3).enumerated() {
+                print("🎵 [MusicSearch] Track \(index + 1): '\(track.title)' by \(track.artist)")
+            }
+            
             // Cache the results
-            MoodCache.shared.cacheTracks(tracks, for: mood)
-            print("💾 [MusicSearch] Cached \(tracks.count) tracks for \(mood.rawValue)")
+            if !tracks.isEmpty {
+                MoodCache.shared.cacheTracks(tracks, for: mood)
+                print("💾 [MusicSearch] Cached \(tracks.count) tracks for \(mood.rawValue)")
+            } else {
+                print("⚠️ [MusicSearch] No tracks found for mood: \(mood.rawValue)")
+                errorMessage = "No tracks found for this mood. Please try again."
+            }
             
             isLoading = false
             return tracks
@@ -149,131 +148,82 @@ class AppleMusicSearch: ObservableObject {
     }
     
     private func generateMockTracks(for mood: MoodType, limit: Int) -> [Track] {
-        let mockData: [MoodType: [(title: String, artist: String)]] = [
+        // Define a type for our enhanced mock data
+        struct MockTrack {
+            let title: String
+            let artist: String
+            let previewURL: String?
+            let artworkURL: String?
+        }
+        
+        // Updated mock data with preview URLs
+        let mockData: [MoodType: [MockTrack]] = [
             .happy: [
-                ("Happy", "Pharrell Williams"),
-                ("Good as Hell", "Lizzo"),
-                ("Uptown Funk", "Mark Ronson ft. Bruno Mars"),
-                ("Can't Stop the Feeling!", "Justin Timberlake"),
-                ("Walking on Sunshine", "Katrina and the Waves"),
-                ("I Gotta Feeling", "The Black Eyed Peas"),
-                ("September", "Earth, Wind & Fire"),
-                ("Good Vibrations", "The Beach Boys"),
-                ("Mr. Blue Sky", "Electric Light Orchestra"),
-                ("Dancing Queen", "ABBA")
-            ],
-            .sad: [
-                ("Someone Like You", "Adele"),
-                ("Hurt", "Johnny Cash"),
-                ("Mad World", "Gary Jules"),
-                ("Black", "Pearl Jam"),
-                ("Everybody Hurts", "R.E.M."),
-                ("Tears in Heaven", "Eric Clapton"),
-                ("The Night We Met", "Lord Huron"),
-                ("Skinny Love", "Bon Iver"),
-                ("Hallelujah", "Jeff Buckley"),
-                ("Fix You", "Coldplay")
-            ],
-            .angry: [
-                ("Break Stuff", "Limp Bizkit"),
-                ("Bodies", "Drowning Pool"),
-                ("Killing in the Name", "Rage Against the Machine"),
-                ("Chop Suey!", "System of a Down"),
-                ("The Beautiful People", "Marilyn Manson"),
-                ("Toxicity", "System of a Down"),
-                ("Du Hast", "Rammstein"),
-                ("Freak on a Leash", "Korn"),
-                ("One Step Closer", "Linkin Park"),
-                ("Sabotage", "Beastie Boys")
-            ],
-            .frustrated: [
-                ("In the End", "Linkin Park"),
-                ("Numb", "Linkin Park"),
-                ("Crawling", "Linkin Park"),
-                ("Heavy", "Linkin Park ft. Kiiara"),
-                ("Boulevard of Broken Dreams", "Green Day"),
-                ("Hurt", "Nine Inch Nails"),
-                ("Breaking the Habit", "Linkin Park"),
-                ("Somewhere I Belong", "Linkin Park"),
-                ("Papercut", "Linkin Park"),
-                ("Points of Authority", "Linkin Park")
+                MockTrack(
+                    title: "Happy",
+                    artist: "Pharrell Williams",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/7b/28/95/7b289597-8746-3e6a-8c1f-51fdf52ce3c7/mzaf_8986637503086299997.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/f1/cc/69/f1cc69f8-8be4-b7ea-99c2-98dda35396da/886444727747.jpg/400x400bb.jpg"
+                ),
+                MockTrack(
+                    title: "Good as Hell",
+                    artist: "Lizzo",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/42/de/cf/42decfb4-0c3a-809c-779a-f431e8f8e615/mzaf_15279441328251258695.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/44/fd/67/44fd67c0-7c7c-96aa-7904-56f53f385118/075679842275.jpg/400x400bb.jpg"
+                ),
+                MockTrack(
+                    title: "Uptown Funk",
+                    artist: "Mark Ronson ft. Bruno Mars",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/d9/c8/c3/d9c8c345-f852-fd5a-271e-08ce08cdf4a3/mzaf_16524191704489572135.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/35/fd/01/35fd012f-a54c-0a5d-0bf3-c61fc66a72a2/886444955843.jpg/400x400bb.jpg"
+                )
             ],
             .calm: [
-                ("Weightless", "Marconi Union"),
-                ("Clair de Lune", "Claude Debussy"),
-                ("Mad World", "Gary Jules"),
-                ("The Night We Met", "Lord Huron"),
-                ("Holocene", "Bon Iver"),
-                ("River", "Joni Mitchell"),
-                ("Gymnopédie No. 1", "Erik Satie"),
-                ("Spiegel im Spiegel", "Arvo Pärt"),
-                ("On Earth as It Is in Heaven", "Angel Olsen"),
-                ("Peace Piece", "Bill Evans")
-            ],
-            .energetic: [
-                ("Thunder", "Imagine Dragons"),
-                ("Uptown Funk", "Mark Ronson ft. Bruno Mars"),
-                ("Can't Stop the Feeling!", "Justin Timberlake"),
-                ("Shut Up and Dance", "Walk the Moon"),
-                ("I Gotta Feeling", "The Black Eyed Peas"),
-                ("Pump It", "The Black Eyed Peas"),
-                ("Stronger", "Kanye West"),
-                ("Eye of the Tiger", "Survivor"),
-                ("We Will Rock You", "Queen"),
-                ("Don't Stop Believin'", "Journey")
-            ],
-            .nostalgic: [
-                ("The Way You Look Tonight", "Tony Bennett"),
-                ("Dream a Little Dream of Me", "Ella Fitzgerald"),
-                ("La Vie En Rose", "Édith Piaf"),
-                ("At Last", "Etta James"),
-                ("Fly Me to the Moon", "Frank Sinatra"),
-                ("What a Wonderful World", "Louis Armstrong"),
-                ("The Girl from Ipanema", "Stan Getz & João Gilberto"),
-                ("Summertime", "Billie Holiday"),
-                ("Blue Moon", "Frank Sinatra"),
-                ("Autumn Leaves", "Nat King Cole")
-            ],
-            .romantic: [
-                ("All of Me", "John Legend"),
-                ("Perfect", "Ed Sheeran"),
-                ("Thinking Out Loud", "Ed Sheeran"),
-                ("A Thousand Years", "Christina Perri"),
-                ("Make You Feel My Love", "Adele"),
-                ("At Last", "Etta James"),
-                ("The Way You Look Tonight", "Tony Bennett"),
-                ("L-O-V-E", "Nat King Cole"),
-                ("La Vie En Rose", "Édith Piaf"),
-                ("Dream a Little Dream of Me", "Ella Fitzgerald")
-            ],
-            .melancholic: [
-                ("Mad World", "Gary Jules"),
-                ("Hurt", "Johnny Cash"),
-                ("Black", "Pearl Jam"),
-                ("The Sound of Silence", "Simon & Garfunkel"),
-                ("Everybody Hurts", "R.E.M."),
-                ("Creep", "Radiohead"),
-                ("Hallelujah", "Jeff Buckley"),
-                ("The Night We Met", "Lord Huron"),
-                ("Skinny Love", "Bon Iver"),
-                ("Holocene", "Bon Iver")
-            ],
-            .excited: [
-                ("Happy", "Pharrell Williams"),
-                ("Can't Stop the Feeling!", "Justin Timberlake"),
-                ("Uptown Funk", "Mark Ronson ft. Bruno Mars"),
-                ("I Gotta Feeling", "The Black Eyed Peas"),
-                ("Good as Hell", "Lizzo"),
-                ("Shut Up and Dance", "Walk the Moon"),
-                ("Walking on Sunshine", "Katrina and the Waves"),
-                ("September", "Earth, Wind & Fire"),
-                ("Dancing Queen", "ABBA"),
-                ("Mr. Blue Sky", "Electric Light Orchestra")
+                MockTrack(
+                    title: "Weightless",
+                    artist: "Marconi Union",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview122/v4/46/d1/8c/46d18c44-2c08-c03d-8d2d-4c82aa813b1d/mzaf_13299827868733339400.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/46/e1/d3/46e1d354-97ea-b523-3d16-4638eae93f1c/859726462655_cover.jpg/400x400bb.jpg"
+                ),
+                MockTrack(
+                    title: "Clair de Lune",
+                    artist: "Claude Debussy",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/96/29/6e/96296e23-d102-c0f7-34b8-d8f0b9f17dbb/mzaf_15001752423346772040.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/7c/8c/fa/7c8cfa3d-9f36-ac89-c7db-dfdd6f436100/20UMGIM85432.rgb.jpg/400x400bb.jpg"
+                ),
+                MockTrack(
+                    title: "River Flows In You",
+                    artist: "Yiruma",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/93/06/ec/9306ec5d-7fce-5cfe-fb6d-ddf916920632/mzaf_8546915963288627725.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/6e/29/ea/6e29ea02-2577-7d19-d501-24c805a63324/191018894421.jpg/400x400bb.jpg"
+                ),
+                MockTrack(
+                    title: "Gymnopédie No. 1",
+                    artist: "Erik Satie",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/32/39/e4/3239e459-1b37-e4bb-48ae-b21aa1e52127/mzaf_18437633248411199823.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/21/08/2f/21082f76-8e10-4683-c21b-290ee7a0ec8c/21UMGIM47176.rgb.jpg/400x400bb.jpg"
+                ),
+                MockTrack(
+                    title: "Spiegel im Spiegel",
+                    artist: "Arvo Pärt",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/98/8c/cb/988ccb97-a067-4282-c7c9-9a5e61d81401/mzaf_5987177512622064167.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/6e/29/ea/6e29ea02-2577-7d19-d501-24c805a63324/191018894421.jpg/400x400bb.jpg"
+                ),
+                MockTrack(
+                    title: "Peaceful Piano",
+                    artist: "Joep Beving",
+                    previewURL: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/d9/5f/66/d95f66d6-3b88-9f0d-1c3f-52747d77eef5/mzaf_12363936653500120931.plus.aac.p.m4a",
+                    artworkURL: "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/7d/dd/7f/7ddd7f4f-05d5-e0cb-e4c5-f5e93c15f769/20UMGIM03994.rgb.jpg/400x400bb.jpg"
+                )
             ]
         ]
         
-        // Handle custom moods and fallback
-        let moodTracks = mockData[mood] ?? mockData[.happy]!
+        // Use a fallback preview URL for moods without specific mock data
+        let fallbackPreviewURL = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/8c/66/03/8c660365-daa6-6b5d-8280-8e521026d01d/mzaf_4818400418435025827.plus.aac.p.m4a"
+        let fallbackArtworkURL = "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/7f/52/86/7f5286d5-4ef9-b0be-8597-f9653c251fc8/886444381390.jpg/400x400bb.jpg"
+        
+        // Get tracks for the mood, or use happy tracks as fallback
+        let moodTracks = mockData[mood] ?? mockData[.happy] ?? []
         let limitedTracks = Array(moodTracks.prefix(limit))
         
         return limitedTracks.enumerated().map { index, trackData in
@@ -281,8 +231,8 @@ class AppleMusicSearch: ObservableObject {
                 id: "\(mood.rawValue)-mock-\(index)",
                 title: trackData.title,
                 artist: trackData.artist,
-                artworkURL: nil, // No artwork for mock data
-                previewURL: nil, // No preview for mock data
+                artworkURL: URL(string: trackData.artworkURL ?? fallbackArtworkURL),
+                previewURL: URL(string: trackData.previewURL ?? fallbackPreviewURL),
                 catalogID: "\(mood.rawValue)-mock-\(index)"
             )
         }

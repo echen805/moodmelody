@@ -1,125 +1,75 @@
 import Foundation
-import AVFoundation
+import MusicKit
 
 @MainActor
-class AppleMusicPlayback: ObservableObject {
+class AppleMusicPlayback: NSObject, ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var currentTrack: Track?
     
-    private var player: AVPlayer?
-    private var playerItem: AVPlayerItem?
-    private var mockPlaybackTimer: Timer?
-    
     static let shared = AppleMusicPlayback()
     
-    private init() {
-        setupAudioSession()
+    private override init() {
+        super.init()
     }
     
-    private func setupAudioSession() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("Failed to setup audio session: \(error)")
+    func playSong(track: Track) {
+        guard let catalogID = track.catalogID else {
+            print("❌ [Playback] No catalog ID for track: \(track.title)")
+            return
         }
-    }
-    
-    func playPreview(track: Track) {
-        if SimulatorDetector.isSimulator {
-            // Mock playback for simulator
-            playMockPreview(track: track)
-        } else {
-            // Real playback for device
-            playRealPreview(track: track)
-        }
-    }
-    
-    private func playMockPreview(track: Track) {
-        // Stop current playback
-        stop()
         
-        // Start mock playback
+        // Check if running in simulator
+        #if targetEnvironment(simulator)
+        print("⚠️ [Playback] Apple Music playback is not available in simulator")
+        print("⚠️ [Playback] Would play: \(track.title) by \(track.artist) (ID: \(catalogID))")
+        // Simulate successful playback for UI testing
         currentTrack = track
         isPlaying = true
+        return
+        #endif
         
-        print("Mock playing: \(track.title) by \(track.artist)")
-        
-        // Simulate 30-second preview
-        mockPlaybackTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { _ in
-            Task { @MainActor in
-                self.stop()
+        Task {
+            do {
+                let song = try await MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(catalogID)).response().items.first
+                guard let song = song else {
+                    print("❌ [Playback] Could not fetch song for catalog ID: \(catalogID)")
+                    return
+                }
+                let player = ApplicationMusicPlayer.shared
+                player.queue = [song]
+                try await player.play()
+                await MainActor.run {
+                    self.currentTrack = track
+                    self.isPlaying = true
+                }
+                print("✅ [Playback] Now playing full song: \(track.title) by \(track.artist)")
+            } catch {
+                print("❌ [Playback] Failed to play song: \(error)")
+                // Reset state on error
+                currentTrack = nil
+                isPlaying = false
             }
         }
     }
     
-    private func playRealPreview(track: Track) {
-        guard let previewURL = track.previewURL else {
-            print("No preview URL available for track: \(track.title)")
-            return
-        }
-        
-        // Stop current playback
-        stop()
-        
-        // Create new player item and player
-        playerItem = AVPlayerItem(url: previewURL)
-        player = AVPlayer(playerItem: playerItem)
-        
-        // Observe playback status
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(playerDidFinishPlaying),
-            name: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem
-        )
-        
-        // Start playback
-        player?.play()
-        currentTrack = track
-        isPlaying = true
-        
-        print("Playing preview for: \(track.title)")
-    }
-    
     func stop() {
-        // Stop real playback
-        player?.pause()
-        player = nil
-        playerItem = nil
-        
-        // Stop mock playback
-        mockPlaybackTimer?.invalidate()
-        mockPlaybackTimer = nil
+        #if targetEnvironment(simulator)
+        print("⚠️ [Playback] Stopping simulated playback")
+        #else
+        let player = ApplicationMusicPlayer.shared
+        player.stop()
+        #endif
         
         currentTrack = nil
         isPlaying = false
-        
-        // Remove observers
-        NotificationCenter.default.removeObserver(
-            self,
-            name: .AVPlayerItemDidPlayToEndTime,
-            object: nil
-        )
+        print("✅ [Playback] Playback stopped")
     }
     
     func togglePlayback() {
         if isPlaying {
             stop()
         } else if let track = currentTrack {
-            playPreview(track: track)
-        }
-    }
-    
-    @objc private func playerDidFinishPlaying() {
-        DispatchQueue.main.async {
-            self.stop()
-        }
-    }
-    
-    deinit {
-        Task { @MainActor in
-            stop()
+            playSong(track: track)
         }
     }
 }

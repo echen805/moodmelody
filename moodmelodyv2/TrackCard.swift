@@ -52,7 +52,7 @@ struct TrackCard: View {
                     if playback.currentTrack?.id == track.id && playback.isPlaying {
                         playback.stop()
                     } else {
-                        playback.playPreview(track: track)
+                        playback.playSong(track: track)
                     }
                 } label: {
                     Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
