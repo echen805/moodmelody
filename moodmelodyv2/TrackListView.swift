@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct TrackListView: View {
-    let mood: MoodType
+    let mood: MoodType?
+    let fusion: MoodFusion?
     let originalInput: String
     let sessionId: String
     
@@ -16,6 +17,38 @@ struct TrackListView: View {
     
     @Environment(\.dismiss) private var dismiss
     
+    // Computed properties for display
+    private var displayMood: MoodType {
+        return mood ?? fusion?.primaryMood ?? .happy
+    }
+    
+    private var searchTerm: String {
+        if let fusion = fusion {
+            return fusion.searchTerm
+        } else if let mood = mood {
+            return mood.searchTerm
+        }
+        return "music"
+    }
+    
+    private var displayName: String {
+        if let fusion = fusion {
+            return fusion.displayName
+        } else if let mood = mood {
+            return mood.rawValue
+        }
+        return "Music"
+    }
+    
+    private var displayEmoji: String {
+        if let fusion = fusion {
+            return fusion.emoji
+        } else if let mood = mood {
+            return mood.emoji
+        }
+        return "🎵"
+    }
+    
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
@@ -25,7 +58,7 @@ struct TrackListView: View {
                     VStack(spacing: 16) {
                         ProgressView()
                             .scaleEffect(1.2)
-                        Text("Finding \(mood.rawValue.lowercased()) music...")
+                        Text("Finding \(displayName.lowercased()) music...")
                             .font(.headline)
                             .foregroundColor(.secondary)
                     }
@@ -125,7 +158,7 @@ struct TrackListView: View {
                             ForEach(tracks) { track in
                                 TrackCard(
                                     track: track,
-                                    mood: mood,
+                                    mood: displayMood,
                                     onLikeToggle: { updatedTrack in
                                         updateTrackInList(updatedTrack)
                                     }
@@ -145,7 +178,7 @@ struct TrackListView: View {
                 // Playback Bar
                 PlaybackBar()
             }
-            .navigationTitle("\(mood.emoji) \(mood.rawValue) Music")
+            .navigationTitle("\(displayEmoji) \(displayName) Music")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -156,7 +189,7 @@ struct TrackListView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Refresh") {
-                        cache.clearCache(for: mood)
+                        cache.clearCache(for: displayMood)
                         loadTracks()
                     }
                     .disabled(isLoading)
@@ -172,14 +205,14 @@ struct TrackListView: View {
                         // Record the mood correction
                         feedbackManager.recordMoodCorrection(
                             originalInput: originalInput,
-                            detectedMood: mood,
+                            detectedMood: displayMood,
                             correctedMood: correctedMood,
                             sessionId: sessionId
                         )
                         
                         dismiss()
                     },
-                    currentMood: mood
+                    currentMood: displayMood
                 )
             }
         }
@@ -190,12 +223,24 @@ struct TrackListView: View {
         errorMessage = nil
         
         // Log the attempt for developers
-        print("🎵 [TrackListView] Loading tracks for mood: \(mood.rawValue)")
+        print("🎵 [TrackListView] Loading tracks for: \(displayName)")
+        print("🎵 [TrackListView] Search term: '\(searchTerm)'")
         print("🎵 [TrackListView] Original input: '\(originalInput)'")
         print("🎵 [TrackListView] Session ID: \(sessionId)")
         
         Task {
-            let fetchedTracks = await searchClient.searchTracks(for: mood, limit: 10)
+            let fetchedTracks: [Track]
+            
+            if let fusion = fusion {
+                // Use fusion search term
+                fetchedTracks = await searchClient.searchTracks(for: searchTerm, limit: 10)
+            } else if let mood = mood {
+                // Use regular mood search
+                fetchedTracks = await searchClient.searchTracks(for: mood, limit: 10)
+            } else {
+                // Fallback
+                fetchedTracks = await searchClient.searchTracks(for: "music", limit: 10)
+            }
             
             await MainActor.run {
                 self.tracks = fetchedTracks
@@ -219,10 +264,10 @@ struct TrackListView: View {
     }
     
     private func recordResultsNotGood() {
-        print("📊 [TrackListView] Recording negative feedback for mood: \(mood.rawValue)")
+        print("📊 [TrackListView] Recording negative feedback for: \(displayName)")
         feedbackManager.recordResultsNotGood(
             originalInput: originalInput,
-            detectedMood: mood,
+            detectedMood: displayMood,
             sessionId: sessionId
         )
         

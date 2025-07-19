@@ -5,15 +5,24 @@ struct ContentView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("hasMusicAuthorization") private var hasMusicAuthorization = false
     @AppStorage("allowMockData") private var allowMockData = false
+    @StateObject private var playback = AppleMusicPlayback.shared
     
     var body: some View {
-        Group {
-            if hasCompletedOnboarding && hasMusicAuthorization {
-                MoodInputView()
-            } else if hasCompletedOnboarding && !hasMusicAuthorization {
-                MusicAuthorizationView()
-            } else {
-                OnboardingView()
+        ZStack(alignment: .bottom) {
+            Group {
+                if hasCompletedOnboarding && hasMusicAuthorization {
+                    MoodInputView()
+                } else if hasCompletedOnboarding && !hasMusicAuthorization {
+                    MusicAuthorizationView()
+                } else {
+                    OnboardingView()
+                }
+            }
+            
+            // Global Player Bar
+            if playback.currentTrack != nil {
+                PlaybackBar()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
     }

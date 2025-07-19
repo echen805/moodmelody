@@ -17,12 +17,16 @@ class AppleMusicSearch: ObservableObject {
             return cachedTracks
         }
         
+        return await searchTracks(for: mood.searchTerm, limit: limit)
+    }
+    
+    func searchTracks(for searchTerm: String, limit: Int = 10) async -> [Track] {
+        
         isLoading = true
         errorMessage = nil
         
         // Log detailed attempt information for developers
-        print("🎵 [MusicSearch] Starting search for mood: \(mood.rawValue)")
-        print("🎵 [MusicSearch] Search term: '\(mood.searchTerm)'")
+        print("🎵 [MusicSearch] Starting search for term: '\(searchTerm)'")
         print("🎵 [MusicSearch] Limit: \(limit)")
         print("🎵 [MusicSearch] Bundle ID: \(Bundle.main.bundleIdentifier ?? "Unknown")")
         
@@ -49,12 +53,12 @@ class AppleMusicSearch: ObservableObject {
             
             // Create search request
             var searchRequest = MusicCatalogSearchRequest(
-                term: mood.searchTerm,
+                term: searchTerm,
                 types: [Song.self]
             )
             searchRequest.limit = limit
             
-            print("🌐 [MusicSearch] API Request configured: \(mood.searchTerm)")
+            print("🌐 [MusicSearch] API Request configured: \(searchTerm)")
             
             let response = try await searchRequest.response()
             let songs = response.songs
@@ -85,13 +89,13 @@ class AppleMusicSearch: ObservableObject {
                 print("🎵 [MusicSearch] Track \(index + 1): '\(track.title)' by \(track.artist)")
             }
             
-            // Cache the results
+            // Cache the results (only for mood-based searches)
             if !tracks.isEmpty {
-                MoodCache.shared.cacheTracks(tracks, for: mood)
-                print("💾 [MusicSearch] Cached \(tracks.count) tracks for \(mood.rawValue)")
+                // For custom search terms, we don't cache as they're dynamic
+                print("💾 [MusicSearch] Found \(tracks.count) tracks for search term: '\(searchTerm)'")
             } else {
-                print("⚠️ [MusicSearch] No tracks found for mood: \(mood.rawValue)")
-                errorMessage = "No tracks found for this mood. Please try again."
+                print("⚠️ [MusicSearch] No tracks found for search term: '\(searchTerm)'")
+                errorMessage = "No tracks found for this search. Please try again."
             }
             
             isLoading = false
