@@ -28,7 +28,7 @@ struct MoodFusion {
     
     var searchTerm: String {
         guard let secondary = secondaryMood else {
-            return "\(intensity.modifier) \(primaryMood.searchTerm)".trimmingCharacters(in: .whitespaces)
+            return "\(intensity.modifier) \(primaryMood.searchTerm())".trimmingCharacters(in: .whitespaces)
         }
         
         // Create fusion search terms
@@ -88,7 +88,7 @@ struct MoodFusion {
         }
         
         // Default fusion
-        return "\(intensity.modifier) \(primary.searchTerm) with \(secondary.searchTerm)".trimmingCharacters(in: .whitespaces)
+        return "\(intensity.modifier) \(primary.searchTerm()) with \(secondary.searchTerm())".trimmingCharacters(in: .whitespaces)
     }
     
     private func blendColors(_ color1: Color, _ color2: Color) -> Color {
@@ -126,8 +126,8 @@ extension MoodFusion {
         let firstPart = parts[0].trimmingCharacters(in: .whitespaces)
         let secondPart = parts[1].trimmingCharacters(in: .whitespaces)
         
-        let firstMood = MoodType.inferMood(from: firstPart)
-        let secondMood = MoodType.inferMood(from: secondPart)
+        let (firstMood, _) = MoodType.inferMood(from: firstPart)
+        let (secondMood, _) = MoodType.inferMood(from: secondPart)
         
         // Don't create fusion if both moods are the same or if one is custom
         if firstMood == secondMood {

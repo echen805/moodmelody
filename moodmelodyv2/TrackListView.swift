@@ -2,14 +2,17 @@ import SwiftUI
 
 struct TrackListView: View {
     let mood: MoodType?
+    let intensity: MoodIntensity?
     let fusion: MoodFusion?
     let originalInput: String
     let sessionId: String
     
     @State private var tracks: [Track] = []
+    @State private var allTracks: [Track] = [] // Full 30-song playlist
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingMoodSelector = false
+    @State private var showingAllTracks = false
     
     @StateObject private var searchClient = AppleMusicSearch.shared
     @StateObject private var cache = MoodCache.shared
@@ -26,7 +29,7 @@ struct TrackListView: View {
         if let fusion = fusion {
             return fusion.searchTerm
         } else if let mood = mood {
-            return mood.searchTerm
+            return mood.enhancedSearchTerm(with: intensity)
         }
         return "music"
     }
@@ -35,6 +38,9 @@ struct TrackListView: View {
         if let fusion = fusion {
             return fusion.displayName
         } else if let mood = mood {
+            if let intensity = intensity {
+                return "\(intensity.rawValue.capitalized) \(mood.rawValue)"
+            }
             return mood.rawValue
         }
         return "Music"
@@ -170,6 +176,20 @@ struct TrackListView: View {
                                         .padding(.horizontal)
                                 }
                             }
+                            
+                            // Show All Tracks Button
+                            if allTracks.count > tracks.count {
+                                VStack(spacing: 12) {
+                                    Divider()
+                                        .padding(.horizontal)
+                                    
+                                    Button("Show All \(allTracks.count) Tracks") {
+                                        showingAllTracks = true
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .padding(.horizontal)
+                                }
+                            }
                         }
                         .padding(.vertical)
                     }
@@ -215,6 +235,13 @@ struct TrackListView: View {
                     currentMood: displayMood
                 )
             }
+            .sheet(isPresented: $showingAllTracks) {
+                AllTracksView(
+                    tracks: allTracks,
+                    mood: displayMood,
+                    title: "\(displayEmoji) All \(displayName) Music"
+                )
+            }
         }
     }
     
@@ -233,17 +260,18 @@ struct TrackListView: View {
             
             if let fusion = fusion {
                 // Use fusion search term
-                fetchedTracks = await searchClient.searchTracks(for: searchTerm, limit: 10)
+                fetchedTracks = await searchClient.searchTracks(for: searchTerm, limit: 25)
             } else if let mood = mood {
-                // Use regular mood search
-                fetchedTracks = await searchClient.searchTracks(for: mood, limit: 10)
+                // Use enhanced mood search
+                fetchedTracks = await searchClient.searchTracks(for: searchTerm, limit: 25)
             } else {
                 // Fallback
-                fetchedTracks = await searchClient.searchTracks(for: "music", limit: 10)
+                fetchedTracks = await searchClient.searchTracks(for: "music", limit: 25)
             }
             
             await MainActor.run {
-                self.tracks = fetchedTracks
+                self.allTracks = fetchedTracks
+                self.tracks = Array(fetchedTracks.prefix(10)) // Show first 10 tracks (max 25 total due to API limit)
                 self.isLoading = false
                 
                 if let error = searchClient.errorMessage {
@@ -251,7 +279,7 @@ struct TrackListView: View {
                     print("❌ [TrackListView] Received error from search client: \(error)")
                     searchClient.clearError()
                 } else {
-                    print("✅ [TrackListView] Successfully loaded \(fetchedTracks.count) tracks")
+                    print("✅ [TrackListView] Successfully loaded \(fetchedTracks.count) tracks, showing 10")
                 }
             }
         }
@@ -274,5 +302,54 @@ struct TrackListView: View {
         // Show some feedback to user
         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
         impactFeedback.impactOccurred()
+    }
+}
+
+// MARK: - AllTracksView
+struct AllTracksView: View {
+    let tracks: [Track]
+    let mood: MoodType
+    let title: String
+    
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var playback = AppleMusicPlayback.shared
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(tracks) { track in
+                            TrackCard(
+                                track: track,
+                                mood: mood,
+                                onLikeToggle: { _ in
+                                    // Handle like toggle if needed
+                                }
+                            )
+                            .padding(.horizontal)
+                            
+                            if track.id != tracks.last?.id {
+                                Divider()
+                                    .padding(.horizontal)
+                            }
+                        }
+                    }
+                    .padding(.vertical)
+                }
+                
+                // Playback Bar
+                PlaybackBar()
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }

@@ -44,6 +44,7 @@ struct MoodSelectorView: View {
                 if let mood = selectedMood {
                     TrackListView(
                         mood: mood,
+                        intensity: nil,
                         fusion: nil,
                         originalInput: "Selected \(mood.rawValue) mood directly",
                         sessionId: sessionId

@@ -17,7 +17,7 @@ class AppleMusicSearch: ObservableObject {
             return cachedTracks
         }
         
-        return await searchTracks(for: mood.searchTerm, limit: limit)
+        return await searchTracks(for: mood.searchTerm(), limit: limit)
     }
     
     func searchTracks(for searchTerm: String, limit: Int = 10) async -> [Track] {

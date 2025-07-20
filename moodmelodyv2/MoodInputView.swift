@@ -3,6 +3,7 @@ import SwiftUI
 struct MoodInputView: View {
     @State private var feelingText: String = ""
     @State private var inferredMood: MoodType?
+    @State private var inferredIntensity: MoodIntensity?
     @State private var inferredFusion: MoodFusion?
     @State private var showingTrackList = false
     @State private var isAnalyzing = false
@@ -69,7 +70,13 @@ struct MoodInputView: View {
                                     .font(.title2)
                                     .fontWeight(.semibold)
                                 
-                                Text("Perfect for \(mood.searchTerm)")
+                                if let intensity = inferredIntensity {
+                                    Text("\(intensity.rawValue.capitalized) \(mood.rawValue.lowercased())")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Text("Perfect for \(mood.enhancedSearchTerm(with: inferredIntensity))")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -200,6 +207,7 @@ struct MoodInputView: View {
                 if let mood = inferredMood {
                     TrackListView(
                         mood: mood,
+                        intensity: inferredIntensity,
                         fusion: nil,
                         originalInput: feelingText,
                         sessionId: sessionId
@@ -207,6 +215,7 @@ struct MoodInputView: View {
                 } else if let fusion = inferredFusion {
                     TrackListView(
                         mood: nil,
+                        intensity: nil,
                         fusion: fusion,
                         originalInput: feelingText,
                         sessionId: sessionId
@@ -259,9 +268,12 @@ struct MoodInputView: View {
                 if let fusion = MoodFusion.inferFusion(from: feelingText) {
                     inferredFusion = fusion
                     inferredMood = nil
+                    inferredIntensity = nil
                 } else {
-                    // Fall back to single mood detection
-                    inferredMood = MoodType.inferMood(from: feelingText)
+                    // Fall back to single mood detection with intensity
+                    let (mood, intensity) = MoodType.inferMood(from: feelingText)
+                    inferredMood = mood
+                    inferredIntensity = intensity
                     inferredFusion = nil
                 }
                 isAnalyzing = false
